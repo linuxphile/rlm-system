@@ -1,0 +1,783 @@
+# Agent Tools Configuration
+# Defines tool permissions and allowed commands for each sub-agent
+
+version: "1.0"
+
+# Global settings
+global:
+  timeout_seconds: 300
+  max_file_size_mb: 10
+  max_output_lines: 1000
+
+# Protected branch settings
+# Agents authorized to push/merge to main/master must set RLM_AGENT env var
+protected_branches:
+  branches: [main, master]
+  authorized_agents: [devops, orchestrator]
+  env_variable: RLM_AGENT
+  # Before pushing to protected branches, authorized agents must:
+  #   export RLM_AGENT=devops   (or orchestrator)
+  # The pre-push hook (hooks/pre-push) enforces this
+
+# Global blocked patterns - these apply to ALL agents
+# Prevents direct commits/pushes to protected branches
+bash_blocked:
+  # Direct pushes to main/master
+  - "git push origin main"
+  - "git push origin master"
+  - "git push upstream main"
+  - "git push upstream master"
+  - "git push * main"
+  - "git push * master"
+  # Force pushes to any branch (dangerous)
+  - "git push --force *"
+  - "git push -f *"
+  - "git push --force-with-lease origin main"
+  - "git push --force-with-lease origin master"
+  # Direct commits while on main/master (agents should work on feature branches)
+  # Note: This is enforced via workflow - agents should checkout feature branches first
+  # Resetting/rebasing main/master
+  - "git reset --hard origin/main"
+  - "git reset --hard origin/master"
+  - "git rebase * main"
+  - "git rebase * master"
+  # Deleting protected branches
+  - "git branch -d main"
+  - "git branch -d master"
+  - "git branch -D main"
+  - "git branch -D master"
+  - "git push origin --delete main"
+  - "git push origin --delete master"
+
+# Tool definitions
+tools:
+  view:
+    description: "Read files and directory listings"
+    risk_level: low
+
+  bash_tool:
+    description: "Execute shell commands"
+    risk_level: medium
+    restrictions:
+      #      - "No write operations to system directories"
+      - "No network operations except curl for health checks"
+      - "No process management (kill, pkill)"
+
+  web_search:
+    description: "Search web for best practices and documentation"
+    risk_level: low
+
+  create_file:
+    description: "Create output files (reports, etc.)"
+    risk_level: low
+    allowed_paths:
+      - "/home/claude/*"
+      - "/mnt/user-data/outputs/*"
+
+  present_files:
+    description: "Present files to user"
+    risk_level: low
+
+# Agent-specific permissions
+agents:
+  orchestrator:
+    tools:
+      - view
+      - bash_tool
+      - web_search
+      - create_file
+      - present_files
+    bash_allowed:
+      - "find . -type f -name '*'"
+      - "find . -type d -name '*'"
+      # Git (read)
+      - "git status"
+      - "git log *"
+      - "git diff *"
+      - "git show *"
+      - "git blame *"
+      # Git (write)
+      - "git add *"
+      - "git commit *"
+      - "git push *"
+      - "git pull *"
+      - "git fetch *"
+      - "git branch *"
+      - "git checkout *"
+      - "git switch *"
+      - "git merge *"
+      - "git rebase *"
+      - "git stash *"
+      - "git tag *"
+      - "git restore *"
+      - "wc -l"
+      - "head -n *"
+      - "tail -n *"
+      - "tree -L *"
+      - "ls -la"
+      - "cat *"
+      - "grep -r *"
+      - "du -sh *"
+      # GitHub CLI (read operations)
+      - "gh repo view *"
+      - "gh pr list *"
+      - "gh pr view *"
+      - "gh issue list *"
+      - "gh issue view *"
+      - "gh run list *"
+      - "gh run view *"
+      # GitHub CLI (write operations)
+      - "gh pr create *"
+      - "gh pr merge *"
+      - "gh pr close *"
+      - "gh pr edit *"
+      - "gh issue create *"
+      - "gh issue close *"
+      - "gh release create *"
+    context_filter: "**/*" # Sees everything for orchestration
+
+  cloud_infra:
+    tools:
+      - view
+      - bash_tool
+      - web_search
+    bash_allowed:
+      # General find
+      - "find . -type f -name '*'"
+      - "find . -type d -name '*'"
+      - "glcloud projects list"
+      - "glcloud projects describe *"
+      - "glcloud projects create *"
+      - "glcloud projects update *"
+      - "glcloud projects add-iam-policy-binding *"
+      - "glcloud projects remove-iam-policy-binding *"
+      - "glcloud projects set-iam-policy *"
+      - "glcloud projects get-iam-policy *"
+      - "glcloud projects list-iam-policy-bindings *"
+
+      # Git (read)
+      - "git status"
+      - "git log *"
+      - "git diff *"
+      - "git show *"
+      - "git blame *"
+      # Git (write) - no merge (restricted to devops/orchestrator)
+      - "git add *"
+      - "git commit *"
+      - "git push *"
+      - "git pull *"
+      - "git fetch *"
+      - "git branch *"
+      - "git checkout *"
+      - "git switch *"
+      - "git stash *"
+      - "git tag *"
+      # Terraform
+      - "terraform fmt -check *"
+      - "terraform validate"
+      - "terraform plan -no-color"
+      - "grep -r * --include='*.tf'"
+      # General utilities
+      - "ls -la"
+      - "head -n *"
+      - "du -sh *"
+      # Kubernetes
+      - "kubectl get *"
+      - "kubectl describe *"
+      - "kubectl config view"
+      - "helm template *"
+      - "helm lint *"
+      # Docker
+      - "docker inspect *"
+      - "hadolint *"
+      # General
+      - "find . -name '*.tf' *"
+      - "find . -name '*.yaml' *"
+      - "grep -rn *"
+      - "cat *"
+      - "infracost breakdown *"
+      # Firebase (infrastructure)
+      - "firebase projects:list"
+      - "firebase apps:list *"
+      - "firebase hosting:sites:list *"
+      - "firebase firestore:indexes *"
+      - "firebase remoteconfig:get *"
+    context_filter:
+      - "*.tf"
+      - "*.tfvars"
+      - "kubernetes/**/*.yaml"
+      - "k8s/**/*.yaml"
+      - "helm/**/*"
+      - "docker-compose*.yaml"
+      - "Dockerfile*"
+      - "firebase.json"
+      - ".firebaserc"
+      - "firestore.rules"
+      - "firestore.indexes.json"
+
+  microservices:
+    tools:
+      - view
+      - bash_tool
+      - web_search
+    bash_allowed:
+      # General find
+      - "find . -type f -name '*'"
+      - "find . -type d -name '*'"
+      # Git (read)
+      - "git status"
+      - "git log *"
+      - "git diff *"
+      - "git show *"
+      - "git blame *"
+      # Git (write) - no merge (restricted to devops/orchestrator)
+      - "git add *"
+      - "git commit *"
+      - "git push *"
+      - "git pull *"
+      - "git fetch *"
+      - "git branch *"
+      - "git checkout *"
+      - "git switch *"
+      - "git stash *"
+      # npm/npx (for Node.js services)
+      - "npm ls *"
+      - "npm audit *"
+      - "npx *"
+      - "find . -name '*.go' *"
+      - "find . -name '*.py' *"
+      - "find . -name '*.ts' *"
+      - "find . -name '*.java' *"
+      - "find . -name 'openapi*.yaml' *"
+      - "find . -name '*.proto' *"
+      - "grep -rn *"
+      - "cat *"
+      - "wc -l *"
+      # General utilities
+      - "ls -la"
+      - "head -n *"
+      - "du -sh *"
+    context_filter:
+      - "src/**/*.{go,py,java,ts,rs}"
+      - "api/**/*"
+      - "services/**/*"
+      - "openapi*.yaml"
+      - "swagger*.yaml"
+      - "proto/**/*.proto"
+      - "graphql/**/*"
+
+  frontend:
+    tools:
+      - view
+      - bash_tool
+      - web_search
+    bash_allowed:
+      # General find
+      - "find . -type f -name '*'"
+      - "find . -type d -name '*'"
+      # Git (read)
+      - "git status"
+      - "git log *"
+      - "git diff *"
+      - "git show *"
+      - "git blame *"
+      # Git (write) - no merge (restricted to devops/orchestrator)
+      - "git add *"
+      - "git commit *"
+      - "git push *"
+      - "git pull *"
+      - "git fetch *"
+      - "git branch *"
+      - "git checkout *"
+      - "git switch *"
+      - "git stash *"
+      # Package analysis
+      - "cat package.json"
+      - "cat package-lock.json"
+      - "npm ls *"
+      - "npm audit *"
+      - "npx depcheck"
+      # Build analysis
+      - "npx webpack-bundle-analyzer *"
+      - "npx source-map-explorer *"
+      - "du -sh node_modules"
+      # Code analysis
+      - "grep -rn * --include='*.tsx'"
+      - "grep -rn * --include='*.ts'"
+      - "grep -rn * --include='*.vue'"
+      - "find . -name '*.tsx' *"
+      - "find . -name '*.test.*' *"
+      - "npx eslint *"
+      - "npx tsc --noEmit"
+      # Performance
+      - "npx lighthouse *"
+      # General utilities
+      - "ls -la"
+      - "head -n *"
+      - "du -sh *"
+      # Firebase (web)
+      - "firebase hosting:channel:list *"
+      - "firebase emulators:start --only hosting *"
+      - "firebase target:apply *"
+    context_filter:
+      - "src/**/*.{tsx,jsx,vue,svelte}"
+      - "*.css"
+      - "*.scss"
+      - "package.json"
+      - "tsconfig.json"
+      - "next.config.*"
+      - "vite.config.*"
+      - "webpack.config.*"
+      - "tailwind.config.*"
+      - "firebase.json"
+      - ".firebaserc"
+      - "firestore.rules"
+      - "storage.rules"
+
+  mobile:
+    tools:
+      - view
+      - bash_tool
+      - web_search
+    bash_allowed:
+      # General find
+      - "find . -type f -name '*'"
+      - "find . -type d -name '*'"
+      # Git (read)
+      - "git status"
+      - "git log *"
+      - "git diff *"
+      - "git show *"
+      - "git blame *"
+      # Git (write) - no merge (restricted to devops/orchestrator)
+      - "git add *"
+      - "git commit *"
+      - "git push *"
+      - "git pull *"
+      - "git fetch *"
+      - "git branch *"
+      - "git checkout *"
+      - "git switch *"
+      - "git stash *"
+      # npm/npx (for React Native)
+      - "npm ls *"
+      - "npm audit *"
+      - "npx *"
+      # iOS
+      - "find . -name '*.swift' *"
+      - "find . -name '*.xcodeproj' *"
+      - "cat */Podfile"
+      - "cat */Package.swift"
+      - "grep -rn * --include='*.swift'"
+      # Android
+      - "find . -name '*.kt' *"
+      - "find . -name '*.java' *"
+      - "cat */build.gradle*"
+      - "grep -rn * --include='*.kt'"
+      # Cross-platform
+      - "cat package.json"
+      - "cat pubspec.yaml"
+      - "find . -name '*.dart' *"
+      # General utilities
+      - "ls -la"
+      - "head -n *"
+      - "du -sh *"
+      # Firebase (mobile)
+      - "firebase apps:list *"
+      - "firebase apps:sdkconfig *"
+      - "firebase crashlytics:symbols:upload *"
+      - "firebase appdistribution:distribute *"
+    context_filter:
+      - "ios/**/*.swift"
+      - "ios/**/*.m"
+      - "android/**/*.kt"
+      - "android/**/*.java"
+      - "lib/**/*.dart"
+      - "App.tsx"
+      - "app.json"
+      - "*.xcodeproj/**/*"
+      - "build.gradle*"
+      - "Podfile"
+      - "pubspec.yaml"
+      - "GoogleService-Info.plist"
+      - "google-services.json"
+      - "firebase.json"
+
+  design_ux:
+    tools:
+      - view
+      - bash_tool
+      - web_search
+    bash_allowed:
+      # General find
+      - "find . -type f -name '*'"
+      - "find . -type d -name '*'"
+      # Git (read)
+      - "git status"
+      - "git log *"
+      - "git diff *"
+      - "git show *"
+      - "git blame *"
+      # Git (write) - no merge (restricted to devops/orchestrator)
+      - "git add *"
+      - "git commit *"
+      - "git push *"
+      - "git pull *"
+      - "git fetch *"
+      - "git branch *"
+      - "git checkout *"
+      - "git switch *"
+      - "git stash *"
+      # npm/npx (for Storybook, style-dictionary)
+      - "npm ls *"
+      - "npm audit *"
+      - "npx *"
+      - "find . -path '*/design-system/*' *"
+      - "find . -name '*.stories.*' *"
+      - "find . -name 'tokens.*' *"
+      - "grep -rn 'color\\|spacing\\|font' *"
+      - "grep -rn 'aria-' *"
+      - "grep -rn '<img' *"
+      - "cat *"
+      - "wc -l *"
+      # General utilities
+      - "ls -la"
+      - "head -n *"
+      - "du -sh *"
+    context_filter:
+      - "design-system/**/*"
+      - "packages/ui/**/*"
+      - "**/*.stories.{tsx,jsx,ts,js}"
+      - "tokens/**/*"
+      - "themes/**/*"
+      - "style-dictionary*"
+
+  aiml:
+    tools:
+      - view
+      - bash_tool
+      - web_search
+    bash_allowed:
+      # General find
+      - "find . -type f -name '*'"
+      - "find . -type d -name '*'"
+      # Git (read)
+      - "git status"
+      - "git log *"
+      - "git diff *"
+      - "git show *"
+      - "git blame *"
+      # Git (write) - no merge (restricted to devops/orchestrator)
+      - "git add *"
+      - "git commit *"
+      - "git push *"
+      - "git pull *"
+      - "git fetch *"
+      - "git branch *"
+      - "git checkout *"
+      - "git switch *"
+      - "git stash *"
+      - "find . -name '*.pkl' *"
+      - "find . -name '*.pt' *"
+      - "find . -name '*.h5' *"
+      - "find . -name '*.ipynb' *"
+      - "find . -path '*/models/*' *"
+      - "grep -rn 'import torch' *"
+      - "grep -rn 'import tensorflow' *"
+      - "grep -rn 'mlflow\\|wandb' *"
+      - "grep -rn 'openai\\|anthropic\\|langchain' *"
+      - "cat *"
+      # General utilities
+      - "ls -la"
+      - "head -n *"
+      - "du -sh *"
+    context_filter:
+      - "models/**/*"
+      - "ml/**/*"
+      - "ai/**/*"
+      - "*.ipynb"
+      - "pipelines/**/*"
+      - "feature_store/**/*"
+      - "training/**/*"
+      - "serving/**/*"
+
+  devops:
+    tools:
+      - view
+      - bash_tool
+      - web_search
+    bash_allowed:
+      # General find
+      - "find . -type f -name '*'"
+      - "find . -type d -name '*'"
+      # Git (read)
+      - "git status"
+      - "git log *"
+      - "git diff *"
+      - "git show *"
+      - "git blame *"
+      # Git (write)
+      - "git add *"
+      - "git commit *"
+      - "git push *"
+      - "git pull *"
+      - "git fetch *"
+      - "git branch *"
+      - "git checkout *"
+      - "git switch *"
+      - "git merge *"
+      - "git rebase *"
+      - "git stash *"
+      - "git tag *"
+      - "git cherry-pick *"
+      # npm/npx (for CI/CD tooling)
+      - "npm ls *"
+      - "npm audit *"
+      - "npm run *"
+      - "npx *"
+      - "find . -name '.github' -type d *"
+      - "find . -name '.gitlab-ci.yml' *"
+      - "find . -name 'Jenkinsfile*' *"
+      - "cat .github/workflows/*.yml"
+      - "cat .gitlab-ci.yml"
+      - "grep -rn 'jobs:\\|stages:\\|steps:' *"
+      - "find . -name 'deploy*.sh' *"
+      - "find . -name 'Dockerfile*' *"
+      - "cat Makefile"
+      # General utilities
+      - "ls -la"
+      - "head -n *"
+      - "du -sh *"
+      # GitHub CLI
+      - "gh repo view *"
+      - "gh pr list *"
+      - "gh pr view *"
+      - "gh pr checks *"
+      - "gh pr diff *"
+      - "gh run list *"
+      - "gh run view *"
+      - "gh run watch *"
+      - "gh workflow list *"
+      - "gh workflow view *"
+      - "gh release list *"
+      - "gh release view *"
+      - "gh secret list *"
+      - "gh variable list *"
+      - "gh api *"
+      # Firebase (deployment)
+      - "firebase deploy --only hosting *"
+      - "firebase deploy --only functions *"
+      - "firebase deploy --only firestore *"
+      - "firebase hosting:channel:deploy *"
+      - "firebase hosting:channel:delete *"
+      - "firebase use *"
+    context_filter:
+      - ".github/**/*"
+      - ".gitlab-ci.yml"
+      - "Jenkinsfile*"
+      - ".circleci/**/*"
+      - "scripts/**/*"
+      - "Makefile"
+      - "deploy/**/*"
+      - "Dockerfile*"
+      - "firebase.json"
+      - ".firebaserc"
+
+  security:
+    tools:
+      - view
+      - bash_tool
+      - web_search
+    bash_allowed:
+      # General find
+      - "find . -type f -name '*'"
+      - "find . -type d -name '*'"
+      # Git
+      - "git status"
+      - "git log *"
+      - "git diff *"
+      - "git show *"
+      - "git blame *"
+      # npm/npx (for security scanning)
+      - "npm ls *"
+      - "npx *"
+      # Secret scanning
+      - "grep -rn 'password\\|secret\\|api_key\\|token' *"
+      - "grep -rn 'AKIA\\|sk-\\|ghp_' *"
+      - "grep -rn 'BEGIN.*PRIVATE KEY' *"
+      - "find . -name '.env*' *"
+      - "find . -name '*.pem' *"
+      # Dependency scanning
+      - "npm audit *"
+      - "pip-audit"
+      - "safety check"
+      # Code analysis
+      - "grep -rn 'eval\\|exec\\|system' *"
+      - "grep -rn 'innerHTML\\|dangerouslySetInnerHTML' *"
+      - "grep -rn 'SELECT.*+\\|INSERT.*+' *"
+      # Infrastructure
+      - "grep -rn '0.0.0.0/0' *"
+      - "grep -rn 'privileged.*true' *"
+      - "cat *"
+      # General utilities
+      - "ls -la"
+      - "head -n *"
+      - "du -sh *"
+      # GitHub CLI (security-related)
+      - "gh secret list *"
+      - "gh variable list *"
+      - "gh api repos/*/dependabot/alerts *"
+      - "gh api repos/*/code-scanning/alerts *"
+      - "gh api repos/*/secret-scanning/alerts *"
+      - "gh repo view --json *"
+    context_filter: "**/*" # Security needs full access
+
+  observability:
+    tools:
+      - view
+      - bash_tool
+      - web_search
+    bash_allowed:
+      # General find
+      - "find . -type f -name '*'"
+      - "find . -type d -name '*'"
+      # Git
+      - "git status"
+      - "git log *"
+      - "git diff *"
+      - "git show *"
+      - "git blame *"
+      - "find . -name 'prometheus*.yml' *"
+      - "find . -name '*alert*.yaml' *"
+      - "find . -name '*dashboard*.json' *"
+      - "grep -rn 'prometheus\\|datadog\\|newrelic' *"
+      - "grep -rn 'logger\\|logging' *"
+      - "grep -rn 'opentelemetry\\|jaeger\\|zipkin' *"
+      - "grep -rn 'health\\|liveness\\|readiness' *"
+      - "cat *"
+      # General utilities
+      - "ls -la"
+      - "head -n *"
+      - "du -sh *"
+      # Firebase (observability)
+      - "firebase crashlytics:mappingfile:generateid *"
+      - "firebase crashlytics:symbols:upload *"
+      # GitHub CLI (workflow runs/logs)
+      - "gh run list *"
+      - "gh run view *"
+      - "gh run view --log *"
+    context_filter:
+      - "monitoring/**/*"
+      - "alerts/**/*"
+      - "prometheus*.yaml"
+      - "grafana/**/*"
+      - "**/logging/**/*"
+      - "**/tracing/**/*"
+      - "firebase.json"
+
+  data_eng:
+    tools:
+      - view
+      - bash_tool
+      - web_search
+    bash_allowed:
+      # General find
+      - "find . -type f -name '*'"
+      - "find . -type d -name '*'"
+      # Git (read)
+      - "git status"
+      - "git log *"
+      - "git diff *"
+      - "git show *"
+      - "git blame *"
+      # Git (write) - no merge (restricted to devops/orchestrator)
+      - "git add *"
+      - "git commit *"
+      - "git push *"
+      - "git pull *"
+      - "git fetch *"
+      - "git branch *"
+      - "git checkout *"
+      - "git switch *"
+      - "git stash *"
+      - "find . -path '*/dbt/*' -name '*.sql' *"
+      - "find . -path '*/airflow/*' *"
+      - "find . -name 'dag*.py' *"
+      - "find . -name 'pipeline*.py' *"
+      - "grep -rn 'from airflow' *"
+      - "grep -rn 'pyspark' *"
+      - "grep -rn 'kafka\\|kinesis' *"
+      - "grep -rn 's3://\\|gs://' *"
+      - "cat *"
+      # General utilities
+      - "ls -la"
+      - "head -n *"
+      - "du -sh *"
+    context_filter:
+      - "dbt/**/*"
+      - "airflow/**/*"
+      - "data/**/*"
+      - "etl/**/*"
+      - "spark/**/*"
+      - "kafka/**/*"
+      - "streaming/**/*"
+
+  product_manager:
+    tools:
+      - view
+      - bash_tool
+      - web_search
+    bash_allowed:
+      # General find
+      - "find . -type f -name '*'"
+      - "find . -type d -name '*'"
+      # Git (read only - PM is analysis focused)
+      - "git status"
+      - "git log *"
+      - "git diff *"
+      - "git show *"
+      # Documentation discovery
+      - "find . -name 'README*'"
+      - "find . -name '*.md'"
+      - "find . -name 'package.json'"
+      - "cat *"
+      - "grep -rn *"
+      # General utilities
+      - "ls -la"
+      - "head -n *"
+      - "tree -L *"
+      - "wc -l *"
+    context_filter:
+      - "docs/**/*"
+      - "README*"
+      - "*.md"
+      - "package.json"
+      - "roadmap.*"
+      - "specs/**/*"
+      - "requirements/**/*"
+
+# Cross-domain validation rules
+cross_validation:
+  api_contracts:
+    agents: [microservices, frontend, mobile]
+    description: "Verify API contracts match client expectations"
+
+  design_tokens:
+    agents: [design_ux, frontend, mobile]
+    description: "Check design token implementation consistency"
+
+  auth_flows:
+    agents: [security, frontend, mobile]
+    description: "Validate authentication across all clients"
+
+  performance_budget:
+    agents: [frontend, mobile, cloud_infra]
+    description: "Ensure infrastructure supports performance goals"
+
+  monitoring_coverage:
+    agents: [observability, microservices, frontend, mobile]
+    description: "Verify monitoring covers all components"
+
+# Output schemas
+output_format: yaml
+output_validation: strict
