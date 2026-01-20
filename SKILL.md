@@ -114,6 +114,64 @@ Claude: [Starts with observability agent, traces through affected services]
 5. **SYNTHESIZE**: Combine findings into prioritized recommendations
 6. **REPORT**: Generate structured output using templates
 
+## Agent Invocation (CRITICAL)
+
+**You MUST use the `Task` tool to invoke RLM sub-agents.** Do NOT use the built-in `Explore` or `Plan` agents for RLM work.
+
+### How to Invoke an RLM Agent
+
+```python
+# 1. Read the agent definition
+agent_def = read('.claude/agents/rlm/{agent_name}.md')
+
+# 2. Use Task tool with general-purpose type
+Task(
+    subagent_type="general-purpose",
+    description=f"RLM {agent_name} analysis/implementation",
+    prompt=f"""
+You are the {agent_name} agent from the RLM Multi-Agent System.
+
+## Your Agent Definition
+{agent_def}
+
+## Your Task
+{task_description}
+
+## Context
+{relevant_files_and_patterns}
+
+## Instructions
+Follow your agent definition. Produce structured YAML output.
+"""
+)
+```
+
+### Parallel Execution
+
+When agents don't depend on each other, invoke multiple in ONE message:
+
+```python
+# These run in parallel - send all Task calls at once
+Task(subagent_type="general-purpose", description="RLM frontend", prompt=...)
+Task(subagent_type="general-purpose", description="RLM mobile", prompt=...)
+Task(subagent_type="general-purpose", description="RLM design_ux", prompt=...)
+```
+
+### Sequential Execution
+
+When one agent needs another's output, wait for completion:
+
+```python
+# data_eng first
+data_result = Task(...)  # Wait for this
+
+# Then microservices uses data_result
+api_result = Task(prompt=f"...schemas: {data_result}...")  # Wait
+
+# Then frontend uses api_result
+frontend_result = Task(prompt=f"...api contracts: {api_result}...")
+```
+
 ## File Structure
 
 ```

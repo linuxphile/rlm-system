@@ -361,13 +361,85 @@ $RlmSection
 }
 
 #-------------------------------------------------------------------------------
+# Configure Write Permissions (allowedTools)
+#-------------------------------------------------------------------------------
+
+Write-Info "Configuring write permissions..."
+Write-Host ""
+Write-Host "RLM agents generate output files (PRDs, reports, etc.)."
+Write-Host "To avoid permission prompts, we can pre-authorize write patterns."
+Write-Host ""
+
+# Default patterns for RLM outputs
+$DefaultPatterns = @(
+    "Write(PRD-*.md)",
+    "Write(*-report.md)",
+    "Write(*-rca.md)",
+    "Write(docs/**)",
+    "Edit(PRD-*.md)",
+    "Edit(*-report.md)",
+    "Edit(*-rca.md)",
+    "Edit(docs/**)"
+)
+
+Write-Host "Default patterns:"
+foreach ($Pattern in $DefaultPatterns) {
+    Write-Host "  - $Pattern"
+}
+Write-Host ""
+
+# Ask for additional patterns
+$AdditionalPatterns = @()
+$CustomInput = Read-Host "Add custom write patterns? (comma-separated, or press Enter to skip)"
+if (-not [string]::IsNullOrWhiteSpace($CustomInput)) {
+    $CustomArray = $CustomInput -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }
+    foreach ($Pattern in $CustomArray) {
+        # Add Write() wrapper if not present
+        if ($Pattern -notmatch '^(Write|Edit)\(') {
+            $AdditionalPatterns += "Write($Pattern)"
+            $AdditionalPatterns += "Edit($Pattern)"
+        } else {
+            $AdditionalPatterns += $Pattern
+        }
+    }
+}
+
+# Combine all patterns
+$AllPatterns = $DefaultPatterns + $AdditionalPatterns
+
+#-------------------------------------------------------------------------------
 # Create settings.json for Claude Code
 #-------------------------------------------------------------------------------
 
 $SettingsPath = Join-Path $ClaudeDir 'settings.json'
+$WriteSettings = $true
 
-if (-not (Test-Path $SettingsPath)) {
+if (Test-Path $SettingsPath) {
+    Write-Host ""
+    Write-Warning "settings.json already exists at $SettingsPath"
+    $Response = Read-Host "Overwrite with new settings? [y/N]"
+    if ($Response -notmatch '^[Yy]') {
+        $WriteSettings = $false
+        Write-Info "Keeping existing settings.json"
+        Write-Host ""
+        Write-Host "To manually add write permissions, add this to your settings.json:"
+        Write-Host ""
+        Write-Host '  "allowedTools": ['
+        for ($i = 0; $i -lt $AllPatterns.Count; $i++) {
+            if ($i -eq ($AllPatterns.Count - 1)) {
+                Write-Host "    `"$($AllPatterns[$i])`""
+            } else {
+                Write-Host "    `"$($AllPatterns[$i])`","
+            }
+        }
+        Write-Host '  ]'
+        Write-Host ""
+    }
+}
+
+if ($WriteSettings) {
     $Settings = @{
+        allowedTools = $AllPatterns
         skills = @{
             'rlm-system' = @{
                 enabled = $true
@@ -387,11 +459,14 @@ if (-not (Test-Path $SettingsPath)) {
             }
         }
     }
-    
+
     $Settings | ConvertTo-Json -Depth 4 | Set-Content -Path $SettingsPath
-    Write-Success "Created settings.json"
-} else {
-    Write-Warning "settings.json already exists, please manually add RLM configuration if needed"
+    Write-Success "Created settings.json with write permissions"
+    Write-Host ""
+    Write-Host "Authorized patterns:"
+    foreach ($Pattern in $AllPatterns) {
+        Write-Host "  - $Pattern"
+    }
 }
 
 #-------------------------------------------------------------------------------
@@ -409,7 +484,7 @@ Write-Host ""
 Write-Host "Directory structure:"
 Write-Host "  $ClaudeDir\"
 Write-Host "  ├── CLAUDE.md"
-Write-Host "  ├── settings.json"
+Write-Host "  ├── settings.json (with allowedTools for auto-permissions)"
 Write-Host "  ├── skills\rlm-system\"
 Write-Host "  │   ├── SKILL.md"
 Write-Host "  │   ├── tools\"

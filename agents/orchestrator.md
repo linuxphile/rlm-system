@@ -169,21 +169,116 @@ def filter_context(path, agent):
 
 ### Phase 4: Sub-Agent Execution
 
+**CRITICAL: How to Invoke RLM Sub-Agents**
+
+You MUST use the `Task` tool with `subagent_type: "general-purpose"` to invoke RLM sub-agents. Each sub-agent runs as a separate agent with full context.
+
 ```python
-def execute_agent(agent_name, context, query):
+def execute_agent(agent_name, context_files, task_description):
     """
-    Invoke a sub-agent with filtered context.
-    
-    This is a conceptual function - in practice, Claude reads the agent
-    definition from agents/{agent_name}.md and follows its instructions.
+    Invoke a sub-agent using Claude Code's Task tool.
+
+    IMPORTANT: Use subagent_type="general-purpose" and include the agent
+    definition in the prompt so the sub-agent knows its role and constraints.
     """
-    # Read agent definition
-    agent_def = view(f"agents/{agent_name}.md")
-    
-    # Execute agent's analysis workflow
-    # The agent will use its permitted tools and produce structured output
-    
-    return agent_output  # YAML structured findings
+    # First, read the agent definition
+    agent_def = read(f".claude/agents/rlm/{agent_name}.md")
+
+    # Build the prompt with agent identity and task
+    prompt = f"""
+You are the {agent_name} agent from the RLM Multi-Agent System.
+
+## Your Agent Definition
+{agent_def}
+
+## Your Task
+{task_description}
+
+## Files to Analyze
+{context_files}
+
+## Instructions
+1. Follow your agent definition above
+2. Use your permitted tools to analyze the codebase
+3. Produce structured YAML output as specified in your definition
+4. Focus only on your domain - don't analyze outside your expertise
+"""
+
+    # Invoke using Task tool with general-purpose type
+    # This runs as a separate agent with full tool access
+    return Task(
+        subagent_type="general-purpose",
+        description=f"RLM {agent_name} analysis",
+        prompt=prompt
+    )
+```
+
+**Example: Invoking the frontend agent**
+
+```
+Task(
+    subagent_type="general-purpose",
+    description="RLM frontend analysis",
+    prompt="""
+You are the frontend agent from the RLM Multi-Agent System.
+
+## Your Agent Definition
+[contents of .claude/agents/rlm/frontend.md]
+
+## Your Task
+Analyze the frontend codebase for:
+- Component architecture and patterns
+- Performance issues (Core Web Vitals)
+- Accessibility compliance
+- Design system consistency
+
+## Files to Analyze
+- src/components/**/*.tsx
+- src/pages/**/*.tsx
+- package.json
+
+## Instructions
+Follow your agent definition. Produce structured YAML output.
+"""
+)
+```
+
+**Parallel Agent Execution**
+
+When agents don't depend on each other, invoke them in parallel by making multiple Task calls in a single response:
+
+```python
+# These can run in parallel - call all at once
+parallel_agents = ['frontend', 'mobile', 'design_ux']
+
+# Make multiple Task calls in ONE response message
+for agent in parallel_agents:
+    Task(
+        subagent_type="general-purpose",
+        description=f"RLM {agent} analysis",
+        prompt=build_agent_prompt(agent, context)
+    )
+```
+
+**Sequential Agent Execution**
+
+When agents depend on previous results, wait for completion before proceeding:
+
+```python
+# data_eng must complete first (provides schemas)
+data_result = Task(subagent_type="general-purpose", ...)
+
+# Then microservices can use the schema info
+api_result = Task(
+    subagent_type="general-purpose",
+    prompt=f"... Use these schemas: {data_result.schemas} ..."
+)
+
+# Then frontend can use API contracts
+frontend_result = Task(
+    subagent_type="general-purpose",
+    prompt=f"... Use these API contracts: {api_result.contracts} ..."
+)
 ```
 
 ### Phase 5: Cross-Domain Validation

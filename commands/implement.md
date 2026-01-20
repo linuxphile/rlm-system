@@ -43,12 +43,60 @@ Orchestrates the full implementation of a Product Requirements Document (PRD). A
 10. **aiml** - ML models, AI integrations
 11. **devops** - CI/CD pipelines, deployment configs
 
+## Agent Invocation
+
+**CRITICAL: You MUST use the Task tool to invoke RLM sub-agents.**
+
+Each specialized agent (frontend, microservices, cloud_infra, etc.) must be invoked using:
+
+```python
+Task(
+    subagent_type="general-purpose",
+    description=f"RLM {agent_name} implementation",
+    prompt=f"""
+You are the {agent_name} agent from the RLM Multi-Agent System.
+
+## Your Agent Definition
+{read('.claude/agents/rlm/{agent_name}.md')}
+
+## Mode: IMPLEMENTATION
+
+## Requirements from PRD
+{extracted_requirements}
+
+## Existing Codebase Patterns
+{detected_patterns}
+
+## Your Task
+{specific_implementation_task}
+
+## Output Format
+Implement the code, then provide a summary in YAML:
+```yaml
+files_created:
+  - path: "..."
+    description: "..."
+files_modified:
+  - path: "..."
+    changes: "..."
+```
+"""
+)
+```
+
+**Parallel Invocation**: When agents don't depend on each other (e.g., frontend and mobile both depend on API but not each other), invoke them in parallel with multiple Task calls in ONE message.
+
+**Sequential Invocation**: When one agent's output is needed by another (e.g., data_eng → microservices → frontend), wait for each to complete before the next.
+
 ## Workflow
 
 ```python
 def execute_implement(prd_path, options=None):
     """
     PRD implementation orchestration workflow.
+
+    IMPORTANT: Use Task tool with subagent_type="general-purpose" to invoke
+    each RLM agent. Read the agent definition and include it in the prompt.
     """
 
     print("## 🚀 PRD Implementation\n")
@@ -129,13 +177,49 @@ def execute_implement(prd_path, options=None):
     if 'data_eng' in by_domain or needs_database_changes(prd):
         print("*Implementing database schemas and migrations...*\n")
 
+        # Read the data_eng agent definition
+        data_eng_def = read('.claude/agents/rlm/data-eng.md')
         data_context = filter_context_for_agent('data_eng', codebase)
-        data_findings = execute_agent('data_eng', {
-            'mode': 'implement',
-            'requirements': extract_data_requirements(prd),
-            'existing_schemas': data_context.schemas,
-            'patterns': patterns.data_patterns
-        })
+
+        # INVOKE USING TASK TOOL - this is the actual invocation
+        data_findings = Task(
+            subagent_type="general-purpose",
+            description="RLM data_eng implementation",
+            prompt=f"""
+You are the data_eng agent from the RLM Multi-Agent System.
+
+## Your Agent Definition
+{data_eng_def}
+
+## Mode: IMPLEMENTATION
+
+## Requirements
+{extract_data_requirements(prd)}
+
+## Existing Schemas
+{data_context.schemas}
+
+## Existing Patterns to Follow
+{patterns.data_patterns}
+
+## Your Task
+1. Create database migrations for new tables/columns needed
+2. Create/update data models
+3. Follow existing patterns in the codebase
+4. Output YAML summary of changes
+
+## Output Format
+After implementing, provide:
+```yaml
+migrations:
+  - name: "..."
+    file: "..."
+models:
+  - name: "..."
+    file: "..."
+```
+"""
+        )
 
         print(f"✓ Created {len(data_findings.migrations)} migrations")
         print(f"✓ Updated {len(data_findings.models)} models")
@@ -188,51 +272,138 @@ def execute_implement(prd_path, options=None):
     else:
         print("*No infrastructure changes required.*")
 
-    # Phase 7: Frontend Implementation
-    print("\n### Phase 7: Frontend Implementation\n")
+    # Phase 7 & 8: Frontend & Mobile Implementation (PARALLEL)
+    # These can run in parallel since they both depend on API but not each other
+    print("\n### Phase 7 & 8: Frontend & Mobile Implementation\n")
+
+    parallel_tasks = []
 
     if 'frontend' in by_domain:
-        print("*Implementing frontend components and pages...*\n")
+        print("*Launching frontend agent...*")
 
+        frontend_def = read('.claude/agents/rlm/frontend.md')
         frontend_context = filter_context_for_agent('frontend', codebase)
-        frontend_findings = execute_agent('frontend', {
-            'mode': 'implement',
-            'requirements': extract_frontend_requirements(prd),
-            'use_cases': prd.use_cases,
-            'existing_components': frontend_context.components,
-            'design_tokens': get_design_tokens(codebase),
-            'api_contracts': api_findings.contracts if 'api_findings' in locals() else None,
-            'patterns': patterns.frontend_patterns
-        })
 
+        # This Task call runs in PARALLEL with mobile below
+        parallel_tasks.append(Task(
+            subagent_type="general-purpose",
+            description="RLM frontend implementation",
+            prompt=f"""
+You are the frontend agent from the RLM Multi-Agent System.
+
+## Your Agent Definition
+{frontend_def}
+
+## Mode: IMPLEMENTATION
+
+## Requirements
+{extract_frontend_requirements(prd)}
+
+## Use Cases to Implement
+{prd.use_cases}
+
+## Existing Components
+{frontend_context.components}
+
+## Design Tokens
+{get_design_tokens(codebase)}
+
+## API Contracts (from microservices phase)
+{api_findings.contracts if 'api_findings' in locals() else 'N/A'}
+
+## Patterns to Follow
+{patterns.frontend_patterns}
+
+## Your Task
+1. Create React/Vue/etc components for the UI
+2. Create pages/routes for each use case
+3. Connect to API endpoints
+4. Follow existing patterns and design tokens
+5. Output YAML summary
+
+## Output Format
+```yaml
+components:
+  - name: "..."
+    file: "..."
+pages:
+  - route: "..."
+    file: "..."
+modified:
+  - file: "..."
+    changes: "..."
+```
+"""
+        ))
+
+    if 'mobile' in by_domain:
+        print("*Launching mobile agent...*")
+
+        mobile_def = read('.claude/agents/rlm/mobile.md')
+        mobile_context = filter_context_for_agent('mobile', codebase)
+
+        # This Task call runs in PARALLEL with frontend above
+        parallel_tasks.append(Task(
+            subagent_type="general-purpose",
+            description="RLM mobile implementation",
+            prompt=f"""
+You are the mobile agent from the RLM Multi-Agent System.
+
+## Your Agent Definition
+{mobile_def}
+
+## Mode: IMPLEMENTATION
+
+## Requirements
+{extract_mobile_requirements(prd)}
+
+## Use Cases to Implement
+{prd.use_cases}
+
+## Existing Screens
+{mobile_context.screens}
+
+## API Contracts (from microservices phase)
+{api_findings.contracts if 'api_findings' in locals() else 'N/A'}
+
+## Patterns to Follow
+{patterns.mobile_patterns}
+
+## Your Task
+1. Create mobile screens for each use case
+2. Create reusable components
+3. Connect to API endpoints
+4. Follow existing patterns (React Native/Flutter/Swift/Kotlin)
+5. Output YAML summary
+
+## Output Format
+```yaml
+screens:
+  - name: "..."
+    file: "..."
+components:
+  - name: "..."
+    file: "..."
+```
+"""
+        ))
+
+    # Wait for parallel tasks to complete
+    # The Task tool returns results when agents finish
+
+    if 'frontend' in by_domain and parallel_tasks:
+        frontend_findings = parallel_tasks[0]  # First result
         print(f"✓ Created {len(frontend_findings.components)} components")
         print(f"✓ Created {len(frontend_findings.pages)} pages")
         print(f"✓ Updated {len(frontend_findings.modified)} existing files")
-        for component in frontend_findings.components[:5]:
-            print(f"  - {component.name}")
-    else:
-        print("*No frontend changes required.*")
 
-    # Phase 8: Mobile Implementation
-    print("\n### Phase 8: Mobile Implementation\n")
-
-    if 'mobile' in by_domain:
-        print("*Implementing mobile screens and components...*\n")
-
-        mobile_context = filter_context_for_agent('mobile', codebase)
-        mobile_findings = execute_agent('mobile', {
-            'mode': 'implement',
-            'requirements': extract_mobile_requirements(prd),
-            'use_cases': prd.use_cases,
-            'existing_screens': mobile_context.screens,
-            'api_contracts': api_findings.contracts if 'api_findings' in locals() else None,
-            'patterns': patterns.mobile_patterns
-        })
-
+    if 'mobile' in by_domain and len(parallel_tasks) > 1:
+        mobile_findings = parallel_tasks[-1]  # Last result
         print(f"✓ Created {len(mobile_findings.screens)} screens")
         print(f"✓ Created {len(mobile_findings.components)} components")
-    else:
-        print("*No mobile changes required.*")
+
+    if not parallel_tasks:
+        print("*No frontend or mobile changes required.*")
 
     # Phase 9: Design System Updates
     print("\n### Phase 9: Design System Updates\n")

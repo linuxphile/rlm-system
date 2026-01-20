@@ -369,14 +369,104 @@ EOF
 fi
 
 #-------------------------------------------------------------------------------
+# Configure Write Permissions (allowedTools)
+#-------------------------------------------------------------------------------
+
+print_info "Configuring write permissions..."
+echo ""
+echo "RLM agents generate output files (PRDs, reports, etc.)."
+echo "To avoid permission prompts, we can pre-authorize write patterns."
+echo ""
+
+# Default patterns for RLM outputs
+DEFAULT_PATTERNS=(
+    "Write(PRD-*.md)"
+    "Write(*-report.md)"
+    "Write(*-rca.md)"
+    "Write(docs/**)"
+    "Edit(PRD-*.md)"
+    "Edit(*-report.md)"
+    "Edit(*-rca.md)"
+    "Edit(docs/**)"
+)
+
+echo "Default patterns:"
+for pattern in "${DEFAULT_PATTERNS[@]}"; do
+    echo "  - $pattern"
+done
+echo ""
+
+# Ask for additional patterns
+ADDITIONAL_PATTERNS=()
+read -p "Add custom write patterns? (comma-separated, or press Enter to skip): " CUSTOM_INPUT
+if [[ -n "$CUSTOM_INPUT" ]]; then
+    IFS=',' read -ra CUSTOM_ARRAY <<< "$CUSTOM_INPUT"
+    for pattern in "${CUSTOM_ARRAY[@]}"; do
+        # Trim whitespace
+        pattern=$(echo "$pattern" | xargs)
+        if [[ -n "$pattern" ]]; then
+            # Add Write() wrapper if not present
+            if [[ ! "$pattern" =~ ^(Write|Edit)\( ]]; then
+                ADDITIONAL_PATTERNS+=("Write($pattern)")
+                ADDITIONAL_PATTERNS+=("Edit($pattern)")
+            else
+                ADDITIONAL_PATTERNS+=("$pattern")
+            fi
+        fi
+    done
+fi
+
+# Combine all patterns
+ALL_PATTERNS=("${DEFAULT_PATTERNS[@]}" "${ADDITIONAL_PATTERNS[@]}")
+
+#-------------------------------------------------------------------------------
 # Create settings.json for Claude Code
 #-------------------------------------------------------------------------------
 
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
+WRITE_SETTINGS=true
 
-if [[ ! -f "$SETTINGS_FILE" ]]; then
+if [[ -f "$SETTINGS_FILE" ]]; then
+    echo ""
+    print_warning "settings.json already exists at $SETTINGS_FILE"
+    read -p "Overwrite with new settings? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        WRITE_SETTINGS=false
+        print_info "Keeping existing settings.json"
+        echo ""
+        echo "To manually add write permissions, add this to your settings.json:"
+        echo ""
+        echo '  "allowedTools": ['
+        for i in "${!ALL_PATTERNS[@]}"; do
+            if [[ $i -eq $((${#ALL_PATTERNS[@]} - 1)) ]]; then
+                echo "    \"${ALL_PATTERNS[$i]}\""
+            else
+                echo "    \"${ALL_PATTERNS[$i]}\","
+            fi
+        done
+        echo '  ]'
+        echo ""
+    fi
+fi
+
+if [[ "$WRITE_SETTINGS" == true ]]; then
+    # Build the allowedTools JSON array
+    ALLOWED_TOOLS_JSON=""
+    for i in "${!ALL_PATTERNS[@]}"; do
+        if [[ $i -eq 0 ]]; then
+            ALLOWED_TOOLS_JSON="\"${ALL_PATTERNS[$i]}\""
+        else
+            ALLOWED_TOOLS_JSON="$ALLOWED_TOOLS_JSON,
+    \"${ALL_PATTERNS[$i]}\""
+        fi
+    done
+
     cat > "$SETTINGS_FILE" << EOF
 {
+  "allowedTools": [
+    $ALLOWED_TOOLS_JSON
+  ],
   "skills": {
     "rlm-system": {
       "enabled": true,
@@ -397,9 +487,12 @@ if [[ ! -f "$SETTINGS_FILE" ]]; then
   }
 }
 EOF
-    print_success "Created settings.json"
-else
-    print_warning "settings.json already exists, please manually add RLM configuration if needed"
+    print_success "Created settings.json with write permissions"
+    echo ""
+    echo "Authorized patterns:"
+    for pattern in "${ALL_PATTERNS[@]}"; do
+        echo "  - $pattern"
+    done
 fi
 
 #-------------------------------------------------------------------------------
@@ -417,7 +510,7 @@ echo ""
 echo "Directory structure:"
 echo "  $CLAUDE_DIR/"
 echo "  ├── CLAUDE.md"
-echo "  ├── settings.json"
+echo "  ├── settings.json (with allowedTools for auto-permissions)"
 echo "  ├── skills/rlm-system/"
 echo "  │   ├── SKILL.md"
 echo "  │   ├── tools/"
