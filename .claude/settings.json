@@ -1,0 +1,100 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(du:*)",
+      "Bash(tree:*)",
+      "Bash(grep:*)",
+
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git blame:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git pull:*)",
+      "Bash(git fetch:*)",
+      "Bash(git branch:*)",
+      "Bash(git checkout:*)",
+      "Bash(git switch:*)",
+      "Bash(git stash:*)",
+      "Bash(git tag:*)",
+      "Bash(git restore:*)",
+      "Bash(git cherry-pick:*)",
+
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(node:*)",
+
+      "Bash(gh repo:*)",
+      "Bash(gh pr:*)",
+      "Bash(gh issue:*)",
+      "Bash(gh run:*)",
+      "Bash(gh workflow:*)",
+      "Bash(gh release:*)",
+      "Bash(gh secret list:*)",
+      "Bash(gh variable list:*)",
+      "Bash(gh api:*)",
+
+      "Bash(terraform:*)",
+      "Bash(kubectl:*)",
+      "Bash(helm:*)",
+      "Bash(docker inspect:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker images:*)",
+      "Bash(hadolint:*)",
+
+      "Bash(firebase:*)",
+      "Bash(gcloud:*)",
+
+      "Bash(pip-audit:*)",
+      "Bash(safety:*)",
+      "Bash(python:*)",
+      "Bash(pip:*)",
+
+      "Bash(infracost:*)",
+      "Bash(make:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(chmod:*)"
+    ],
+
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(git merge:*)",
+      "Bash(git rebase:*)"
+    ],
+
+    "deny": [
+      "Bash(git push origin main:*)",
+      "Bash(git push origin master:*)",
+      "Bash(git push upstream main:*)",
+      "Bash(git push upstream master:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push --force-with-lease:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git branch -d main:*)",
+      "Bash(git branch -d master:*)",
+      "Bash(git branch -D main:*)",
+      "Bash(git branch -D master:*)",
+      "Bash(git push origin --delete main:*)",
+      "Bash(git push origin --delete master:*)",
+      "Bash(rm -rf /:*)",
+      "Bash(sudo:*)",
+      "Bash(chmod 777:*)",
+      "Bash(dd if=:*)",
+      "Bash(mkfs:*)",
+      "Bash(kill -9:*)",
+      "Bash(pkill -9:*)",
+      "Bash(killall:*)"
+    ]
+  }
+}

@@ -1,9 +1,14 @@
 ---
 name: mobile
 description: Specializes in iOS (Swift, SwiftUI), Android (Kotlin, Compose), and cross-platform mobile development (React Native, Flutter). Covers performance, security, platform compliance, and user experience. Use for mobile architecture analysis and building mobile applications.
-tools: Read, Write, Edit, Grep, Glob, Bash, LSP, WebSearch
-bash_permissions: tools/agent-tools.yaml#mobile
+tools: Read, Write, Edit, Grep, Glob, Bash, Task, WebSearch, WebFetch
 model: inherit
+hooks:
+  PreToolUse:
+    - matcher: Bash
+      hooks:
+        - type: command
+          command: hooks/validators/validate-standard.sh
 ---
 
 You are the Mobile Agent specializing in iOS, Android, and cross-platform mobile development including performance, security, platform compliance, and user experience.

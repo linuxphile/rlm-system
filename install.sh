@@ -178,10 +178,11 @@ print_success "Installed tools/agent-tools.yaml"
 
 # Copy hooks
 mkdir -p "$RLM_SKILL_DIR/hooks"
-cp "$SCRIPT_DIR/hooks/pre-push" "$RLM_SKILL_DIR/hooks/"
+cp "$SCRIPT_DIR/hooks/git/pre-push" "$RLM_SKILL_DIR/hooks/"
+cp "$SCRIPT_DIR/hooks/git/pre-push.ps1" "$RLM_SKILL_DIR/hooks/"
 cp "$SCRIPT_DIR/hooks/install-hooks.sh" "$RLM_SKILL_DIR/hooks/"
 chmod +x "$RLM_SKILL_DIR/hooks/pre-push" "$RLM_SKILL_DIR/hooks/install-hooks.sh"
-print_success "Installed hooks/pre-push and hooks/install-hooks.sh"
+print_success "Installed hooks (pre-push, pre-push.ps1, install-hooks.sh)"
 
 #-------------------------------------------------------------------------------
 # Install Agents
@@ -369,7 +370,7 @@ EOF
 fi
 
 #-------------------------------------------------------------------------------
-# Configure Write Permissions (allowedTools)
+# Configure Permissions (allow/ask/deny)
 #-------------------------------------------------------------------------------
 
 print_info "Configuring write permissions..."
@@ -378,8 +379,8 @@ echo "RLM agents generate output files (PRDs, reports, etc.)."
 echo "To avoid permission prompts, we can pre-authorize write patterns."
 echo ""
 
-# Default patterns for RLM outputs
-DEFAULT_PATTERNS=(
+# Default patterns for RLM outputs (Write/Edit permissions)
+DEFAULT_WRITE_PATTERNS=(
     "Write(PRD-*.md)"
     "Write(*-report.md)"
     "Write(*-rca.md)"
@@ -390,14 +391,120 @@ DEFAULT_PATTERNS=(
     "Edit(docs/**)"
 )
 
-echo "Default patterns:"
-for pattern in "${DEFAULT_PATTERNS[@]}"; do
+# Bash permissions from RLM agent-tools.yaml
+BASH_ALLOW_PATTERNS=(
+    # File system
+    "Bash(find:*)"
+    "Bash(ls:*)"
+    "Bash(cat:*)"
+    "Bash(head:*)"
+    "Bash(tail:*)"
+    "Bash(wc:*)"
+    "Bash(du:*)"
+    "Bash(tree:*)"
+    "Bash(grep:*)"
+    # Git operations
+    "Bash(git status:*)"
+    "Bash(git log:*)"
+    "Bash(git diff:*)"
+    "Bash(git show:*)"
+    "Bash(git blame:*)"
+    "Bash(git add:*)"
+    "Bash(git commit:*)"
+    "Bash(git pull:*)"
+    "Bash(git fetch:*)"
+    "Bash(git branch:*)"
+    "Bash(git checkout:*)"
+    "Bash(git switch:*)"
+    "Bash(git stash:*)"
+    "Bash(git tag:*)"
+    "Bash(git restore:*)"
+    "Bash(git cherry-pick:*)"
+    # Node.js
+    "Bash(npm:*)"
+    "Bash(npx:*)"
+    "Bash(node:*)"
+    # GitHub CLI
+    "Bash(gh repo:*)"
+    "Bash(gh pr:*)"
+    "Bash(gh issue:*)"
+    "Bash(gh run:*)"
+    "Bash(gh workflow:*)"
+    "Bash(gh release:*)"
+    "Bash(gh secret list:*)"
+    "Bash(gh variable list:*)"
+    "Bash(gh api:*)"
+    # Infrastructure tools
+    "Bash(terraform:*)"
+    "Bash(kubectl:*)"
+    "Bash(helm:*)"
+    "Bash(docker inspect:*)"
+    "Bash(docker ps:*)"
+    "Bash(docker images:*)"
+    "Bash(hadolint:*)"
+    "Bash(firebase:*)"
+    "Bash(gcloud:*)"
+    # Python
+    "Bash(pip-audit:*)"
+    "Bash(safety:*)"
+    "Bash(python:*)"
+    "Bash(python3:*)"
+    "Bash(pip:*)"
+    "Bash(pip3:*)"
+    # Other tools
+    "Bash(infracost:*)"
+    "Bash(make:*)"
+    "Bash(mkdir:*)"
+    "Bash(cp:*)"
+    "Bash(mv:*)"
+    "Bash(chmod:*)"
+    "Bash(curl:*)"
+    "Bash(source:*)"
+)
+
+BASH_ASK_PATTERNS=(
+    "Bash(git push:*)"
+    "Bash(git merge:*)"
+    "Bash(git rebase:*)"
+)
+
+BASH_DENY_PATTERNS=(
+    "Bash(git push origin main:*)"
+    "Bash(git push origin master:*)"
+    "Bash(git push upstream main:*)"
+    "Bash(git push upstream master:*)"
+    "Bash(git push --force:*)"
+    "Bash(git push -f:*)"
+    "Bash(git push --force-with-lease:*)"
+    "Bash(git reset --hard:*)"
+    "Bash(git branch -d main:*)"
+    "Bash(git branch -d master:*)"
+    "Bash(git branch -D main:*)"
+    "Bash(git branch -D master:*)"
+    "Bash(git push origin --delete main:*)"
+    "Bash(git push origin --delete master:*)"
+    "Bash(rm -rf /:*)"
+    "Bash(sudo:*)"
+    "Bash(chmod 777:*)"
+    "Bash(dd if=:*)"
+    "Bash(mkfs:*)"
+    "Bash(kill -9:*)"
+    "Bash(pkill -9:*)"
+    "Bash(killall:*)"
+)
+
+echo "Default write patterns:"
+for pattern in "${DEFAULT_WRITE_PATTERNS[@]}"; do
     echo "  - $pattern"
 done
 echo ""
+echo "Bash allow patterns: ${#BASH_ALLOW_PATTERNS[@]} commands"
+echo "Bash ask patterns: ${#BASH_ASK_PATTERNS[@]} commands (require approval)"
+echo "Bash deny patterns: ${#BASH_DENY_PATTERNS[@]} commands (blocked)"
+echo ""
 
-# Ask for additional patterns
-ADDITIONAL_PATTERNS=()
+# Ask for additional write patterns
+ADDITIONAL_WRITE_PATTERNS=()
 read -p "Add custom write patterns? (comma-separated, or press Enter to skip): " CUSTOM_INPUT
 if [[ -n "$CUSTOM_INPUT" ]]; then
     IFS=',' read -ra CUSTOM_ARRAY <<< "$CUSTOM_INPUT"
@@ -407,17 +514,17 @@ if [[ -n "$CUSTOM_INPUT" ]]; then
         if [[ -n "$pattern" ]]; then
             # Add Write() wrapper if not present
             if [[ ! "$pattern" =~ ^(Write|Edit)\( ]]; then
-                ADDITIONAL_PATTERNS+=("Write($pattern)")
-                ADDITIONAL_PATTERNS+=("Edit($pattern)")
+                ADDITIONAL_WRITE_PATTERNS+=("Write($pattern)")
+                ADDITIONAL_WRITE_PATTERNS+=("Edit($pattern)")
             else
-                ADDITIONAL_PATTERNS+=("$pattern")
+                ADDITIONAL_WRITE_PATTERNS+=("$pattern")
             fi
         fi
     done
 fi
 
-# Combine all patterns
-ALL_PATTERNS=("${DEFAULT_PATTERNS[@]}" "${ADDITIONAL_PATTERNS[@]}")
+# Combine all allow patterns (write + bash)
+ALL_ALLOW_PATTERNS=("${DEFAULT_WRITE_PATTERNS[@]}" "${ADDITIONAL_WRITE_PATTERNS[@]}" "${BASH_ALLOW_PATTERNS[@]}")
 
 #-------------------------------------------------------------------------------
 # Create settings.json for Claude Code
@@ -435,64 +542,53 @@ if [[ -f "$SETTINGS_FILE" ]]; then
         WRITE_SETTINGS=false
         print_info "Keeping existing settings.json"
         echo ""
-        echo "To manually add write permissions, add this to your settings.json:"
-        echo ""
-        echo '  "allowedTools": ['
-        for i in "${!ALL_PATTERNS[@]}"; do
-            if [[ $i -eq $((${#ALL_PATTERNS[@]} - 1)) ]]; then
-                echo "    \"${ALL_PATTERNS[$i]}\""
-            else
-                echo "    \"${ALL_PATTERNS[$i]}\","
-            fi
-        done
-        echo '  ]'
+        echo "To manually add RLM permissions, merge these into your settings.json:"
+        echo "  See: $SCRIPT_DIR/.claude/settings.json"
         echo ""
     fi
 fi
 
 if [[ "$WRITE_SETTINGS" == true ]]; then
-    # Build the allowedTools JSON array
-    ALLOWED_TOOLS_JSON=""
-    for i in "${!ALL_PATTERNS[@]}"; do
-        if [[ $i -eq 0 ]]; then
-            ALLOWED_TOOLS_JSON="\"${ALL_PATTERNS[$i]}\""
-        else
-            ALLOWED_TOOLS_JSON="$ALLOWED_TOOLS_JSON,
-    \"${ALL_PATTERNS[$i]}\""
-        fi
-    done
+    # Build JSON arrays for permissions
+    build_json_array() {
+        local -n arr=$1
+        local result=""
+        for i in "${!arr[@]}"; do
+            if [[ $i -eq 0 ]]; then
+                result="\"${arr[$i]}\""
+            else
+                result="$result,
+      \"${arr[$i]}\""
+            fi
+        done
+        echo "$result"
+    }
+
+    ALLOW_JSON=$(build_json_array ALL_ALLOW_PATTERNS)
+    ASK_JSON=$(build_json_array BASH_ASK_PATTERNS)
+    DENY_JSON=$(build_json_array BASH_DENY_PATTERNS)
 
     cat > "$SETTINGS_FILE" << EOF
 {
-  "allowedTools": [
-    $ALLOWED_TOOLS_JSON
-  ],
-  "skills": {
-    "rlm-system": {
-      "enabled": true,
-      "path": "skills/rlm-system/SKILL.md"
-    }
-  },
-  "commands": {
-    "rlm": {
-      "enabled": true,
-      "path": "commands/rlm/"
-    }
-  },
-  "agents": {
-    "rlm": {
-      "enabled": true,
-      "path": "agents/rlm/"
-    }
+  "permissions": {
+    "allow": [
+      $ALLOW_JSON
+    ],
+    "ask": [
+      $ASK_JSON
+    ],
+    "deny": [
+      $DENY_JSON
+    ]
   }
 }
 EOF
-    print_success "Created settings.json with write permissions"
+    print_success "Created settings.json with RLM permissions"
     echo ""
-    echo "Authorized patterns:"
-    for pattern in "${ALL_PATTERNS[@]}"; do
-        echo "  - $pattern"
-    done
+    echo "Permissions configured:"
+    echo "  - Allow: ${#ALL_ALLOW_PATTERNS[@]} patterns (auto-approved)"
+    echo "  - Ask: ${#BASH_ASK_PATTERNS[@]} patterns (require approval)"
+    echo "  - Deny: ${#BASH_DENY_PATTERNS[@]} patterns (blocked)"
 fi
 
 #-------------------------------------------------------------------------------
@@ -510,7 +606,7 @@ echo ""
 echo "Directory structure:"
 echo "  $CLAUDE_DIR/"
 echo "  ├── CLAUDE.md"
-echo "  ├── settings.json (with allowedTools for auto-permissions)"
+echo "  ├── settings.json (with permissions: allow/ask/deny)"
 echo "  ├── skills/rlm-system/"
 echo "  │   ├── SKILL.md"
 echo "  │   ├── tools/"

@@ -1,9 +1,14 @@
 ---
 name: observability
 description: Specializes in monitoring, logging, distributed tracing, alerting, and SLI/SLO management. Use for analyzing and implementing metrics (Prometheus, Datadog), logs (ELK, structured logging), traces (Jaeger, OpenTelemetry), alerts, and dashboards.
-tools: Read, Write, Edit, Grep, Glob, Bash, WebSearch
-bash_permissions: tools/agent-tools.yaml#observability
+tools: Read, Write, Edit, Grep, Glob, Bash, Task, WebSearch, WebFetch
 model: inherit
+hooks:
+  PreToolUse:
+    - matcher: Bash
+      hooks:
+        - type: command
+          command: hooks/validators/validate-standard.sh
 ---
 
 You are the Observability Agent specializing in monitoring, logging, distributed tracing, alerting, and SLI/SLO management.

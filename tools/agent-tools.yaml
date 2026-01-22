@@ -67,16 +67,90 @@ tools:
     description: "Search web for best practices and documentation"
     risk_level: low
 
+  web_fetch:
+    description: "Fetch and process content from URLs"
+    risk_level: low
+
   create_file:
     description: "Create output files (reports, etc.)"
     risk_level: low
-    allowed_paths:
-      - "/home/claude/*"
-      - "/mnt/user-data/outputs/*"
+    # allowed_paths:
+    #   - "/home/claude/*"
+    #   - "/mnt/user-data/outputs/*"
 
   present_files:
     description: "Present files to user"
     risk_level: low
+
+  # File operation tools
+  read_file:
+    description: "Read file contents"
+    risk_level: low
+
+  write_file:
+    description: "Create or overwrite files"
+    risk_level: medium
+    restrictions:
+      - "Respect context_filter paths"
+      - "No writing to system directories"
+
+  edit_file:
+    description: "Make targeted edits to existing files"
+    risk_level: medium
+    restrictions:
+      - "Respect context_filter paths"
+      - "No editing system files"
+
+  glob:
+    description: "Find files by pattern matching"
+    risk_level: low
+
+  grep:
+    description: "Search file contents with regex"
+    risk_level: low
+
+  # Cognitive tools
+  planning:
+    description: "Plan and break down complex tasks into steps"
+    risk_level: low
+
+  thinking:
+    description: "Reason through problems and analyze options"
+    risk_level: low
+
+  # Task management tools
+  task:
+    description: "Launch sub-agents for complex multi-step tasks"
+    risk_level: medium
+
+  todo:
+    description: "Track and manage task lists and progress"
+    risk_level: low
+
+  skill:
+    description: "Execute registered skills and slash commands"
+    risk_level: low
+
+  # Sub-agent launching
+  subagent_launch:
+    description: "Launch sub-agents in isolated Claude instances"
+    risk_level: medium
+    config_file: "hooks/subagent-hook.yaml"
+    parameters:
+      required:
+        - agent_name # Which agent to launch (from agents/ directory)
+        - task_type # analysis | implementation | review | query
+        - task_description # What the agent should do
+      optional:
+        - context_files # Specific files to include (overrides auto-filter)
+        - response_schema # Override default schema for agent
+        - timeout # Override default timeout
+        - background # Run in background (default: false)
+        - model # Override model (default: inherit)
+    returns:
+      status: "success | error | partial | timeout"
+      summary: "Brief summary of result"
+      output: "Structured YAML matching response_schema"
 
 # Agent-specific permissions
 agents:
@@ -85,8 +159,20 @@ agents:
       - view
       - bash_tool
       - web_search
+      - web_fetch
       - create_file
       - present_files
+      - read_file
+      - write_file
+      - edit_file
+      - glob
+      - grep
+      - planning
+      - thinking
+      - task
+      - todo
+      - skill
+      - subagent_launch # Can launch any agent in isolated context
     bash_allowed:
       - "find . -type f -name '*'"
       - "find . -type d -name '*'"
@@ -110,14 +196,14 @@ agents:
       - "git stash *"
       - "git tag *"
       - "git restore *"
-      - "wc -l"
-      - "head -n *"
-      - "tail -n *"
-      - "tree -L *"
-      - "ls -la"
+      - "wc *"
+      - "head *"
+      - "tail *"
+      - "tree *"
+      - "ls *"
       - "cat *"
-      - "grep -r *"
-      - "du -sh *"
+      - "grep *"
+      - "du *"
       # GitHub CLI (read operations)
       - "gh repo view *"
       - "gh pr list *"
@@ -134,6 +220,7 @@ agents:
       - "gh issue create *"
       - "gh issue close *"
       - "gh release create *"
+
     context_filter: "**/*" # Sees everything for orchestration
 
   cloud_infra:
@@ -141,6 +228,17 @@ agents:
       - view
       - bash_tool
       - web_search
+      - web_fetch
+      - read_file
+      - write_file
+      - edit_file
+      - glob
+      - grep
+      - planning
+      - thinking
+      - task
+      - todo
+      - skill
     bash_allowed:
       # General find
       - "find . -type f -name '*'"
@@ -220,6 +318,17 @@ agents:
       - view
       - bash_tool
       - web_search
+      - web_fetch
+      - read_file
+      - write_file
+      - edit_file
+      - glob
+      - grep
+      - planning
+      - thinking
+      - task
+      - todo
+      - skill
     bash_allowed:
       # General find
       - "find . -type f -name '*'"
@@ -271,6 +380,17 @@ agents:
       - view
       - bash_tool
       - web_search
+      - web_fetch
+      - read_file
+      - write_file
+      - edit_file
+      - glob
+      - grep
+      - planning
+      - thinking
+      - task
+      - todo
+      - skill
     bash_allowed:
       # General find
       - "find . -type f -name '*'"
@@ -339,6 +459,17 @@ agents:
       - view
       - bash_tool
       - web_search
+      - web_fetch
+      - read_file
+      - write_file
+      - edit_file
+      - glob
+      - grep
+      - planning
+      - thinking
+      - task
+      - todo
+      - skill
     bash_allowed:
       # General find
       - "find . -type f -name '*'"
@@ -408,6 +539,17 @@ agents:
       - view
       - bash_tool
       - web_search
+      - web_fetch
+      - read_file
+      - write_file
+      - edit_file
+      - glob
+      - grep
+      - planning
+      - thinking
+      - task
+      - todo
+      - skill
     bash_allowed:
       # General find
       - "find . -type f -name '*'"
@@ -457,6 +599,17 @@ agents:
       - view
       - bash_tool
       - web_search
+      - web_fetch
+      - read_file
+      - write_file
+      - edit_file
+      - glob
+      - grep
+      - planning
+      - thinking
+      - task
+      - todo
+      - skill
     bash_allowed:
       # General find
       - "find . -type f -name '*'"
@@ -506,6 +659,18 @@ agents:
       - view
       - bash_tool
       - web_search
+      - web_fetch
+      - read_file
+      - write_file
+      - edit_file
+      - glob
+      - grep
+      - planning
+      - thinking
+      - task
+      - todo
+      - skill
+      - subagent_launch # Can launch security, cloud_infra for validation
     bash_allowed:
       # General find
       - "find . -type f -name '*'"
@@ -588,6 +753,17 @@ agents:
       - view
       - bash_tool
       - web_search
+      - web_fetch
+      - read_file
+      - glob
+      - grep
+      - planning
+      - thinking
+      - task
+      - todo
+      - skill
+      - subagent_launch # Can escalate to any agent for security concerns
+      # No write_file or edit_file - security agent is read-only for scanning
     bash_allowed:
       # General find
       - "find . -type f -name '*'"
@@ -637,6 +813,17 @@ agents:
       - view
       - bash_tool
       - web_search
+      - web_fetch
+      - read_file
+      - write_file
+      - edit_file
+      - glob
+      - grep
+      - planning
+      - thinking
+      - task
+      - todo
+      - skill
     bash_allowed:
       # General find
       - "find . -type f -name '*'"
@@ -680,6 +867,17 @@ agents:
       - view
       - bash_tool
       - web_search
+      - web_fetch
+      - read_file
+      - write_file
+      - edit_file
+      - glob
+      - grep
+      - planning
+      - thinking
+      - task
+      - todo
+      - skill
     bash_allowed:
       # General find
       - "find . -type f -name '*'"
@@ -727,6 +925,16 @@ agents:
       - view
       - bash_tool
       - web_search
+      - web_fetch
+      - read_file
+      - glob
+      - grep
+      - planning
+      - thinking
+      - task
+      - todo
+      - skill
+      # No write_file or edit_file - PM is analysis focused
     bash_allowed:
       # General find
       - "find . -type f -name '*'"

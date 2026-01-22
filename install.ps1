@@ -199,11 +199,16 @@ $HooksDir = Join-Path $RlmSkillDir 'hooks'
 if (-not (Test-Path $HooksDir)) {
     New-Item -ItemType Directory -Path $HooksDir -Force | Out-Null
 }
-$PrePushSource = Join-Path $ScriptDir 'hooks\pre-push'
+$PrePushSource = Join-Path $ScriptDir 'hooks\git\pre-push'
+$PrePushPs1Source = Join-Path $ScriptDir 'hooks\git\pre-push.ps1'
 $InstallHooksSource = Join-Path $ScriptDir 'hooks\install-hooks.sh'
 if (Test-Path $PrePushSource) {
     Copy-Item $PrePushSource -Destination $HooksDir -Force
     Write-Success "Installed hooks/pre-push"
+}
+if (Test-Path $PrePushPs1Source) {
+    Copy-Item $PrePushPs1Source -Destination $HooksDir -Force
+    Write-Success "Installed hooks/pre-push.ps1"
 }
 if (Test-Path $InstallHooksSource) {
     Copy-Item $InstallHooksSource -Destination $HooksDir -Force
@@ -370,8 +375,8 @@ Write-Host "RLM agents generate output files (PRDs, reports, etc.)."
 Write-Host "To avoid permission prompts, we can pre-authorize write patterns."
 Write-Host ""
 
-# Default patterns for RLM outputs
-$DefaultPatterns = @(
+# Default patterns for RLM outputs (Write/Edit permissions)
+$DefaultWritePatterns = @(
     "Write(PRD-*.md)",
     "Write(*-report.md)",
     "Write(*-rca.md)",
@@ -382,30 +387,78 @@ $DefaultPatterns = @(
     "Edit(docs/**)"
 )
 
-Write-Host "Default patterns:"
-foreach ($Pattern in $DefaultPatterns) {
+# Bash permissions from RLM agent-tools.yaml
+$BashAllowPatterns = @(
+    # File system
+    "Bash(find:*)", "Bash(ls:*)", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)",
+    "Bash(wc:*)", "Bash(du:*)", "Bash(tree:*)", "Bash(grep:*)",
+    # Git operations
+    "Bash(git status:*)", "Bash(git log:*)", "Bash(git diff:*)", "Bash(git show:*)",
+    "Bash(git blame:*)", "Bash(git add:*)", "Bash(git commit:*)", "Bash(git pull:*)",
+    "Bash(git fetch:*)", "Bash(git branch:*)", "Bash(git checkout:*)", "Bash(git switch:*)",
+    "Bash(git stash:*)", "Bash(git tag:*)", "Bash(git restore:*)", "Bash(git cherry-pick:*)",
+    # Node.js
+    "Bash(npm:*)", "Bash(npx:*)", "Bash(node:*)",
+    # GitHub CLI
+    "Bash(gh repo:*)", "Bash(gh pr:*)", "Bash(gh issue:*)", "Bash(gh run:*)",
+    "Bash(gh workflow:*)", "Bash(gh release:*)", "Bash(gh secret list:*)",
+    "Bash(gh variable list:*)", "Bash(gh api:*)",
+    # Infrastructure tools
+    "Bash(terraform:*)", "Bash(kubectl:*)", "Bash(helm:*)",
+    "Bash(docker inspect:*)", "Bash(docker ps:*)", "Bash(docker images:*)",
+    "Bash(hadolint:*)", "Bash(firebase:*)", "Bash(gcloud:*)",
+    # Python
+    "Bash(pip-audit:*)", "Bash(safety:*)", "Bash(python:*)", "Bash(python3:*)",
+    "Bash(pip:*)", "Bash(pip3:*)",
+    # Other tools
+    "Bash(infracost:*)", "Bash(make:*)", "Bash(mkdir:*)", "Bash(cp:*)",
+    "Bash(mv:*)", "Bash(chmod:*)", "Bash(curl:*)", "Bash(source:*)"
+)
+
+$BashAskPatterns = @(
+    "Bash(git push:*)", "Bash(git merge:*)", "Bash(git rebase:*)"
+)
+
+$BashDenyPatterns = @(
+    "Bash(git push origin main:*)", "Bash(git push origin master:*)",
+    "Bash(git push upstream main:*)", "Bash(git push upstream master:*)",
+    "Bash(git push --force:*)", "Bash(git push -f:*)", "Bash(git push --force-with-lease:*)",
+    "Bash(git reset --hard:*)",
+    "Bash(git branch -d main:*)", "Bash(git branch -d master:*)",
+    "Bash(git branch -D main:*)", "Bash(git branch -D master:*)",
+    "Bash(git push origin --delete main:*)", "Bash(git push origin --delete master:*)",
+    "Bash(rm -rf /:*)", "Bash(sudo:*)", "Bash(chmod 777:*)",
+    "Bash(dd if=:*)", "Bash(mkfs:*)", "Bash(kill -9:*)", "Bash(pkill -9:*)", "Bash(killall:*)"
+)
+
+Write-Host "Default write patterns:"
+foreach ($Pattern in $DefaultWritePatterns) {
     Write-Host "  - $Pattern"
 }
 Write-Host ""
+Write-Host "Bash allow patterns: $($BashAllowPatterns.Count) commands"
+Write-Host "Bash ask patterns: $($BashAskPatterns.Count) commands (require approval)"
+Write-Host "Bash deny patterns: $($BashDenyPatterns.Count) commands (blocked)"
+Write-Host ""
 
-# Ask for additional patterns
-$AdditionalPatterns = @()
+# Ask for additional write patterns
+$AdditionalWritePatterns = @()
 $CustomInput = Read-Host "Add custom write patterns? (comma-separated, or press Enter to skip)"
 if (-not [string]::IsNullOrWhiteSpace($CustomInput)) {
     $CustomArray = $CustomInput -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }
     foreach ($Pattern in $CustomArray) {
         # Add Write() wrapper if not present
         if ($Pattern -notmatch '^(Write|Edit)\(') {
-            $AdditionalPatterns += "Write($Pattern)"
-            $AdditionalPatterns += "Edit($Pattern)"
+            $AdditionalWritePatterns += "Write($Pattern)"
+            $AdditionalWritePatterns += "Edit($Pattern)"
         } else {
-            $AdditionalPatterns += $Pattern
+            $AdditionalWritePatterns += $Pattern
         }
     }
 }
 
-# Combine all patterns
-$AllPatterns = $DefaultPatterns + $AdditionalPatterns
+# Combine all allow patterns (write + bash)
+$AllAllowPatterns = $DefaultWritePatterns + $AdditionalWritePatterns + $BashAllowPatterns
 
 #-------------------------------------------------------------------------------
 # Create settings.json for Claude Code
@@ -422,51 +475,28 @@ if (Test-Path $SettingsPath) {
         $WriteSettings = $false
         Write-Info "Keeping existing settings.json"
         Write-Host ""
-        Write-Host "To manually add write permissions, add this to your settings.json:"
-        Write-Host ""
-        Write-Host '  "allowedTools": ['
-        for ($i = 0; $i -lt $AllPatterns.Count; $i++) {
-            if ($i -eq ($AllPatterns.Count - 1)) {
-                Write-Host "    `"$($AllPatterns[$i])`""
-            } else {
-                Write-Host "    `"$($AllPatterns[$i])`","
-            }
-        }
-        Write-Host '  ]'
+        Write-Host "To manually add RLM permissions, merge these into your settings.json:"
+        Write-Host "  See: $ScriptDir\.claude\settings.json"
         Write-Host ""
     }
 }
 
 if ($WriteSettings) {
     $Settings = @{
-        allowedTools = $AllPatterns
-        skills = @{
-            'rlm-system' = @{
-                enabled = $true
-                path = 'skills/rlm-system/SKILL.md'
-            }
-        }
-        commands = @{
-            rlm = @{
-                enabled = $true
-                path = 'commands/rlm/'
-            }
-        }
-        agents = @{
-            rlm = @{
-                enabled = $true
-                path = 'agents/rlm/'
-            }
+        permissions = @{
+            allow = $AllAllowPatterns
+            ask = $BashAskPatterns
+            deny = $BashDenyPatterns
         }
     }
 
     $Settings | ConvertTo-Json -Depth 4 | Set-Content -Path $SettingsPath
-    Write-Success "Created settings.json with write permissions"
+    Write-Success "Created settings.json with RLM permissions"
     Write-Host ""
-    Write-Host "Authorized patterns:"
-    foreach ($Pattern in $AllPatterns) {
-        Write-Host "  - $Pattern"
-    }
+    Write-Host "Permissions configured:"
+    Write-Host "  - Allow: $($AllAllowPatterns.Count) patterns (auto-approved)"
+    Write-Host "  - Ask: $($BashAskPatterns.Count) patterns (require approval)"
+    Write-Host "  - Deny: $($BashDenyPatterns.Count) patterns (blocked)"
 }
 
 #-------------------------------------------------------------------------------
@@ -484,7 +514,7 @@ Write-Host ""
 Write-Host "Directory structure:"
 Write-Host "  $ClaudeDir\"
 Write-Host "  ├── CLAUDE.md"
-Write-Host "  ├── settings.json (with allowedTools for auto-permissions)"
+Write-Host "  ├── settings.json (with permissions: allow/ask/deny)"
 Write-Host "  ├── skills\rlm-system\"
 Write-Host "  │   ├── SKILL.md"
 Write-Host "  │   ├── tools\"
